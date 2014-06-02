@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <time.h>
 
 struct person {
@@ -11,6 +12,9 @@ struct person {
 	
 	/* Flagga som markerar immunitet */
 	int			immun;
+
+	/* Flagga för död person */
+	int			doed;
 };
 
 
@@ -23,6 +27,7 @@ struct {
 	int			smitta_t_min;
 	int			smitta_t_max;
 	float			smitta_risk;
+	float			doedsrisk;
 
 	int			friska_idag;
 	int			sjuka_idag;
@@ -61,30 +66,38 @@ int index_t(int x, int y) {
 
 
 void doeda_kanske(int x, int y) {
-	/* I den här simuleringen dödar vi inte något */
+	/* I den här simuleringen dödar vi inte någon */
 	return;
 }
 
 
+/* Försöker smitta en närliggande person */
 void smitta_kanske(int x, int y) {
 	float n;
 	int dx, dy, t, s;
 
 	n = slumptal();
 	/* Smitta endast om personen har sådan otur */
-	if (Matris.smitta_risk > n)
+	if (Matris.smitta_risk < n)
 		return;
-	/* Slumpa fram en närliggande cell att smitta till */
-	dx = rand() % 3 - 1;
-	dy = rand() % 3 - 1;
+	
+	do {
+		/* Slumpa fram en närliggande cell att smitta till */
+		dx = rand() % 3 - 1;
+		dy = rand() % 3 - 1;
+	} while (!dx && !dy); /* Personen kan inte smitta sig själv */
 
 	if ((t = index_t(x + dx, y + dy)) < 0) {
 		/* Cellen är utanför kanterna, blir ingen smitta */
 		return;
 	}
 
+	/* Personen har redan smittats */
+	if (Matris.person[t].immun)
+		return;
+
 	/* slumpa fram antal dagar s som personen kommer vara sjuk */
-	s = rand() % (Matris.smitta_t_max - Matris.smitta_t_min);
+	s = rand() % (Matris.smitta_t_max - Matris.smitta_t_min + 1) + Matris.smitta_t_min;
 	Matris.person[t].smittad = s;
 	Matris.person[t].cooldown = 1;
 	Matris.person[t].immun = 1;
@@ -97,6 +110,7 @@ void smitta_kanske(int x, int y) {
 }
 
 
+/* Simulerar en dag */
 void simulera_dag() {
 	int i, j;
 
@@ -108,7 +122,7 @@ void simulera_dag() {
 			Matris.person[index_t(j, i)].smittad--;
 			Matris.person[index_t(j, i)].cooldown--;
 			/* Smittad och smittande? */
-			if (Matris.person[index_t(j, i)].smittad > 0 && Matris.person[index_t(j, i)].cooldown < 1)
+			if (Matris.person[index_t(j, i)].smittad > 0 && Matris.person[index_t(j, i)].cooldown < 1 && !Matris.person[index_t(j, i)].doed) 
 				smitta_kanske(j, i);
 			/* Singla slant om personen ska dö eller inte */
 			doeda_kanske(j, i);
@@ -124,21 +138,66 @@ void simulera_dag() {
 	return;
 }
 
-			
-
 
 int main(int argc, char **argv) {
 	int i = 0;
+	int paus = 0, n, x, y, t;
 	srand(time(NULL));
-	matris_init(50);
+
+	if (argc < 7) {
+		fprintf(stderr, "Usage: %s <individmatrisstorlek (N×N)> <smittotid minimum> <smittotid maximum> <smittorisk [0,1]> <dödsrisk [0,1]> <snabb simulering>\n", argv[0]);
+		return -1;
+	}
+	n = atoi(argv[1]);
+	Matris.smitta_t_min = atoi(argv[2]);
+	Matris.smitta_t_max = atoi(argv[3]);
+	sscanf(argv[4], "%f", &Matris.smitta_risk);
+	sscanf(argv[5], "%f", &Matris.doedsrisk);
+	paus = atoi(argv[6]);
+
+	matris_init(n);
+
+	fprintf(stderr, "Ange koordinater for nysmittade. Markera att du är färdig genom att ange enbart ett enterslag som X-koordinat\n");
+	do {
+		x = -1;
+		fprintf(stderr, "X-koordinat i %i×%i-matris att placera smittad: ", n, n);
+		fscanf(stdin, "%i\n", &x);
+		if (x < 0)
+			break;
+		fprintf(stderr, "Y-koordinat i %i×%i-matris att placera smittad: ", n, n);
+		fscanf(stdin, "%i\n", &y);
+		t = index_t(x, y);
+		if (t < 0) {
+			fprintf(stderr, "Ogiltig koordinat!\n");
+			continue;
+		}
+
+		fprintf(stderr, "Dagar personen kommer vara sjuk: ");
+		fscanf(stdin, "%i\n", &Matris.person[t].smittad);
+		Matris.person[t].immun = 1;
+		Matris.person[t].cooldown = 1;
+	}
 
 	do {
 		simulera_dag();
 		i++;
+
+		/* Skriv ut statistik */
+		fprintf(stdout, "Antal insjuknade i dag    : %.5i\n", Matris.smittade_idag);
+		fprintf(stdout, "Antal tillfrisknade i dag : %.5i\n", Matris.friska_idag);
+		fprintf(stdout, "Antal sjuka totalt i dag  : %.5i\n", Matris.sjuka_idag);
+		fprintf(stdout, "Antal smittade totalt     : %.5i\n", Matris.smittade_totalt);
+		fprintf(stdout, "Antal dödsfall i dag      : %.5i\n", Matris.doeda_idag);
+		fprintf(stdout, "Antal dödsfall totalt     : %.5i\n", Matris.doeda_totalt);
+		fprintf(stdout, "---------------------------------\n");
+	
+		/* Om simuleringen skall köra en dag varannan sekund, pausa en stund */
+		if (paus)
+			sleep(2);
 	} while (Matris.sjuka_idag > 0);
 
 	fprintf(stdout, "Antalet sjuka är nu noll, stoppar simulering. Det har gått %i dag(ar)\n", i);
-	fprintf(stdout, "Totalt smittades %i av populationen (%i %%)\n", Matris.smittade_totalt, Matris.smittade_totalt * 100 / (Matris.person_w * Matris.person_h));
+	fprintf(stdout, "Totalt smittades %i individer i populationen (%i %%)\n", Matris.smittade_totalt, Matris.smittade_totalt * 100 / (Matris.person_w * Matris.person_h));
 
 	return 0;
 }
