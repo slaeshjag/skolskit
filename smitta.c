@@ -66,7 +66,15 @@ int index_t(int x, int y) {
 
 
 void doeda_kanske(int x, int y) {
-	/* I den här simuleringen dödar vi inte någon */
+	/* Slumpa fram om personen dör eller inte */
+	if (Matris.doedsrisk < slumptal())
+		return;
+	/* Personen dör */
+	Matris.person[index_t(x, y)].doed = 1;
+
+	/* Uppdatera statistik */
+	Matris.doeda_idag++;
+	Matris.doeda_totalt++;
 	return;
 }
 
@@ -122,10 +130,11 @@ void simulera_dag() {
 			Matris.person[index_t(j, i)].smittad--;
 			Matris.person[index_t(j, i)].cooldown--;
 			/* Smittad och smittande? */
-			if (Matris.person[index_t(j, i)].smittad > 0 && Matris.person[index_t(j, i)].cooldown < 1 && !Matris.person[index_t(j, i)].doed) 
+			if (Matris.person[index_t(j, i)].smittad > 0 && Matris.person[index_t(j, i)].cooldown < 1 && !Matris.person[index_t(j, i)].doed) {
 				smitta_kanske(j, i);
-			/* Singla slant om personen ska dö eller inte */
-			doeda_kanske(j, i);
+				/* Singla slant om personen ska dö eller inte */
+				doeda_kanske(j, i);
+			}
 
 			/* Personen blev frisk i dag */
 			if (!Matris.person[index_t(j, i)].smittad)
@@ -145,7 +154,7 @@ int main(int argc, char **argv) {
 	srand(time(NULL));
 
 	if (argc < 7) {
-		fprintf(stderr, "Usage: %s <individmatrisstorlek (N×N)> <smittotid minimum> <smittotid maximum> <smittorisk [0,1]> <dödsrisk [0,1]> <snabb simulering>\n", argv[0]);
+		fprintf(stderr, "Usage: %s <individmatrisstorlek (N×N)> <smittotid minimum> <smittotid maximum> <smittorisk [0,1]> <dödsrisk [0,1]> <långsam simulering>\n", argv[0]);
 		return -1;
 	}
 	n = atoi(argv[1]);
@@ -157,15 +166,15 @@ int main(int argc, char **argv) {
 
 	matris_init(n);
 
-	fprintf(stderr, "Ange koordinater for nysmittade. Markera att du är färdig genom att ange enbart ett enterslag som X-koordinat\n");
+	fprintf(stderr, "Ange koordinater for nysmittade. Markera att du är färdig genom att ange -1 som X-koordinat\n");
 	do {
 		x = -1;
 		fprintf(stderr, "X-koordinat i %i×%i-matris att placera smittad: ", n, n);
-		fscanf(stdin, "%i\n", &x);
+		fscanf(stdin, "%i", &x);
 		if (x < 0)
 			break;
 		fprintf(stderr, "Y-koordinat i %i×%i-matris att placera smittad: ", n, n);
-		fscanf(stdin, "%i\n", &y);
+		fscanf(stdin, "%i", &y);
 		t = index_t(x, y);
 		if (t < 0) {
 			fprintf(stderr, "Ogiltig koordinat!\n");
@@ -173,10 +182,11 @@ int main(int argc, char **argv) {
 		}
 
 		fprintf(stderr, "Dagar personen kommer vara sjuk: ");
-		fscanf(stdin, "%i\n", &Matris.person[t].smittad);
+		fscanf(stdin, "%i", &Matris.person[t].smittad);
 		Matris.person[t].immun = 1;
 		Matris.person[t].cooldown = 1;
-	}
+		Matris.smittade_totalt++;
+	} while (1);
 
 	do {
 		simulera_dag();
